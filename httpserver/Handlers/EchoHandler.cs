@@ -3,34 +3,14 @@ using System.Collections.Generic;
 using System.Web.Script.Serialization;
 using httpserver.Models;
 
-namespace httpserver
+namespace httpserver.Handlers
 {
-    public static class ApiHandlers
+    public class EchoHandler : IRouteHandler
     {
-        public static DateTime ServerStartTime { get; set; }
+        public string Method => "POST";
+        public string Path => "/api/echo";
 
-        // GET /api/hello
-        public static ApiResponse Hello(RequestContext ctx)
-        {
-            return ApiResponse.Ok(new
-            {
-                message = "Hello, World!",
-                timestamp = DateTime.UtcNow.ToString("o")
-            });
-        }
-
-        // GET /api/status
-        public static ApiResponse Status(RequestContext ctx)
-        {
-            return ApiResponse.Ok(new
-            {
-                status = "running",
-                uptime_seconds = (int)(DateTime.UtcNow - ServerStartTime).TotalSeconds
-            });
-        }
-
-        // POST /api/echo
-        public static ApiResponse Echo(RequestContext ctx)
+        public ApiResponse Handle(RequestContext ctx)
         {
             if (string.IsNullOrWhiteSpace(ctx.RawBody))
                 return ApiResponse.BadRequest("Request body is empty");

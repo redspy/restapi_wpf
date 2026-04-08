@@ -1,29 +1,29 @@
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using httpserver.Models;
 
-namespace httpserver
+namespace httpserver.Services
 {
-    public class HttpServer
+    public class HttpServerService
     {
+        private readonly Router _router;
+        private readonly RequestParser _parser;
+
         private HttpListener _listener;
         private CancellationTokenSource _cts;
         private Task _listenTask;
-        private readonly Router _router;
 
-        public event Action<string> OnRequestLogged;
+        public event Action<LogEntry> RequestCompleted;
 
         public bool IsRunning => _listener != null && _listener.IsListening;
 
-        public HttpServer(Router router)
+        public HttpServerService(Router router, RequestParser parser)
         {
             _router = router;
+            _parser = parser;
         }
 
         public void Start(int port)
@@ -46,7 +46,7 @@ namespace httpserver
             _listener.Stop();
 
             try { await _listenTask; }
-            catch { /* TaskCanceledException / ObjectDisposedException는 정상 */ }
+            catch { }
 
             _listener.Close();
             _listener = null;
@@ -64,7 +64,7 @@ namespace httpserver
                 catch (HttpListenerException) { break; }
                 catch (ObjectDisposedException) { break; }
 
-                Task.Run(() => HandleRequest(ctx));
+                _ = Task.Run(() => HandleRequest(ctx));
             }
         }
 
@@ -73,7 +73,7 @@ namespace httpserver
             var req = listenerCtx.Request;
             var res = listenerCtx.Response;
 
-            RequestContext ctx = BuildRequestContext(req);
+            var ctx = _parser.Parse(req);
             ApiResponse apiResponse;
 
             try
@@ -94,37 +94,10 @@ namespace httpserver
                 res.OutputStream.Write(buffer, 0, buffer.Length);
                 res.OutputStream.Close();
             }
-            catch { /* 클라이언트가 연결을 끊은 경우 무시 */ }
+            catch { }
 
-            string logLine = $"[{DateTime.Now:HH:mm:ss}] {req.HttpMethod} {req.Url.PathAndQuery} → {apiResponse.StatusCode}";
-            OnRequestLogged?.Invoke(logLine);
-        }
-
-        private RequestContext BuildRequestContext(HttpListenerRequest req)
-        {
-            string body = "";
-            if (req.HasEntityBody)
-                using (var reader = new StreamReader(req.InputStream, req.ContentEncoding))
-                    body = reader.ReadToEnd();
-
-            var queryParams = new Dictionary<string, string>();
-            foreach (string key in req.QueryString.AllKeys)
-                if (key != null)
-                    queryParams[key] = req.QueryString[key];
-
-            string path = req.Url.AbsolutePath.TrimEnd('/').ToLowerInvariant();
-            if (string.IsNullOrEmpty(path)) path = "/";
-
-            return new RequestContext
-            {
-                Method = req.HttpMethod.ToUpperInvariant(),
-                Path = path,
-                RawBody = body,
-                Headers = req.Headers.AllKeys
-                    .Where(k => k != null)
-                    .ToDictionary(k => k, k => req.Headers[k]),
-                QueryParams = queryParams
-            };
+            var entry = new LogEntry(req.HttpMethod, req.Url.PathAndQuery, apiResponse.StatusCode);
+            RequestCompleted?.Invoke(entry);
         }
     }
 }
